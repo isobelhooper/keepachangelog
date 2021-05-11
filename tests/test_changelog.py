@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Release note 1.
 - Release note 2.
+- Release note 3,
+  with a continuation.
 
 ### Added
 - Enhancement 1
@@ -85,7 +87,7 @@ def test_changelog_with_versions_and_all_categories(changelog):
                 "sub enhancement 2",
                 "Enhancement 2",
             ],
-            "changed": ["Release note 1.", "Release note 2."],
+            "changed": ["Release note 1.", "Release note 2.", "Release note 3, with a continuation."],
             "deprecated": ["Deprecated feature 1", "Future removal 2"],
             "fixed": ["Bug fix 1", "sub bug 1", "sub bug 2", "Bug fix 2"],
             "release_date": "2018-06-01",
@@ -127,6 +129,8 @@ def test_raw_changelog_with_versions_and_all_categories(changelog):
             "raw": """### Changed
 - Release note 1.
 - Release note 2.
+- Release note 3,
+  with a continuation.
 ### Added
 - Enhancement 1
 - sub enhancement 1

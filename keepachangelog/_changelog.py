@@ -2,25 +2,31 @@ import datetime
 import re
 from typing import Dict, List, Optional
 
+from mistletoe import Document, block_token as bt, span_token as st, BaseRenderer
+
 from keepachangelog._versioning import guess_unreleased_version
 
 
-def is_release(line: str) -> bool:
-    return line.startswith("## ")
+def is_release(section: bt.BlockToken) -> bool:
+    """A section that indicates a release starts with a ## heading."""
+    return isinstance(section, bt.Heading) and section.level == 2
 
 
-def add_release(changes: Dict[str, dict], line: str, show_unreleased: bool) -> dict:
-    release_line = line[3:].lower().strip(" ")
-    # A release is separated by a space between version and release date
-    # Release pattern should match lines like: "[0.0.1] - 2020-12-31" or [Unreleased]
-    version, release_date = (
-        release_line.split(" ", maxsplit=1)
-        if " " in release_line
-        else (release_line, None)
-    )
-    if not show_unreleased and not release_date:
+def add_release(changes: Dict[str, dict], section: bt.Heading, show_unreleased: bool) -> dict:
+    """Release pattern should match one of:
+       "[0.0.1] - 2020-12-31"
+       "[Unreleased]"
+    The release number (or Unreleased) in square brackets can also be a link."""
+    if len(section.children) == 1 and not show_unreleased:
         return {}
-    version = unlink(version)
+    version_token = section.children[0]
+    if isinstance(version_token, st.RawText):
+        version = unlink(version_token.content)
+    elif isinstance(version_token, st.Link):
+        version = version_token.children[0].content  # The link parsing already removes the [].
+
+    release_date = section.children[1].content
+
     return changes.setdefault(
         version,
         {"version": version, "release_date": extract_date(release_date)},
@@ -38,12 +44,13 @@ def extract_date(date: str) -> str:
     return date.lstrip(" -(").rstrip(" )")
 
 
-def is_category(line: str) -> bool:
-    return line.startswith("### ")
+def is_category(section: bt.BlockToken) -> bool:
+    """A section that indicates a category of changes starts with a ### heading."""
+    return isinstance(section, bt.Heading) and section.level == 3
 
 
-def add_category(release: dict, line: str) -> List[str]:
-    category = line[4:].lower().strip(" ")
+def add_category(release: dict, section: bt.Heading) -> List[str]:
+    category = section.children[0].content
     return release.setdefault(category, [])
 
 
@@ -51,28 +58,37 @@ def add_category(release: dict, line: str) -> List[str]:
 link_pattern = re.compile(r"^\[(.*)\]: (.*)$")
 
 
-def is_information(line: str) -> bool:
-    return line and not link_pattern.fullmatch(line)
+def is_list(section: bt.BlockToken) -> bool:
+    return isinstance(section, bt.List)
 
 
-def add_information(category: List[str], line: str):
-    category.append(line.lstrip(" *-").rstrip(" -"))
+def extract_change_entry(list_entry: bt.ListItem) -> str:
+    """Use mistletoe's BaseRenderer to output the text of a change entry.
+    TODO: Make a smarter renderer that puts inline code and other inline items back, if wanted."""
+    with BaseRenderer() as renderer:
+        return renderer.render(list_entry)
+
+
+def add_change_list(category: List[str], section: bt.List):
+    for list_entry in section.children:
+        category.append(extract_change_entry(list_entry))
 
 
 def to_dict(changelog_path: str, *, show_unreleased: bool = False) -> Dict[str, dict]:
+    """Parse the changelog to a dictionary using a Markdown parser."""
     changes = {}
+    current_release = {}
+    category = []
     with open(changelog_path) as change_log:
-        current_release = {}
-        category = []
-        for line in change_log:
-            line = line.strip(" \n")
+        parsed_changelog = Document(change_log)
 
-            if is_release(line):
-                current_release = add_release(changes, line, show_unreleased)
-            elif is_category(line):
-                category = add_category(current_release, line)
-            elif is_information(line):
-                add_information(category, line)
+    for section in parsed_changelog.children:
+        if is_release(section):
+            current_release = add_release(changes, section, show_unreleased)
+        elif is_category(section):
+            category = add_category(current_release, section)
+        elif is_list(section) and current_release and category:
+            add_change_list(category, section)
 
     return changes
 
